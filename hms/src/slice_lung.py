@@ -5,6 +5,7 @@ import pickle
 import utils
 from skimage.io import imsave
 
+
 def process_scan(scan_path, predictions_dir, output_directory):
     p1, p2 = (256, 256), (256, 256)
     scan_id = os.path.basename(scan_path)

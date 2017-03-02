@@ -79,7 +79,7 @@ if __name__ == '__main__':
                 area = np.sum(region)
                 average_prob = np.sum(bigger_probs * region) / area
                 region_probabilities.append((average_prob, area))
-                if average_prob > 0.0 and area > 20:
+                if average_prob > 0.0 and area > 15:
                     filtered_contours.append(contour)
 
             print("Region prob:",  region_probabilities)
