@@ -44,20 +44,20 @@ def normalize_metrics(metrics, example_count):
     return metrics
 
 
-def init_metrics():
+def init_metrics(classes):
     metrics = {}
 
     metrics['losses'] = { 'segmentation': 0.0}
 
     metrics['accuracy'] = {
-        'segmentation': {k: (0.0, 0) for k, v in STRUCTURE_CLASS}}
+        'segmentation': {k: (0.0, 0) for k, v in classes}}
 
     return metrics
 
 
-def compute_jacard(preds, mask):
+def compute_jacard(preds, mask, classes):
     result = {}
-    for i, (k, v) in enumerate(STRUCTURE_CLASS):
+    for i, (k, v) in enumerate(classes):
         positive_preds = (preds == (i + 1))
         positive_gt = (mask == (i + 1))
         total_pixels = np.sum(
@@ -260,7 +260,6 @@ if '__main__' == __name__:
         tf.summary.image("masks", masks)
 
         mean_image = tf.reduce_mean(images, axis=[1,2,3])
-        print(mean_image)
         images = images - tf.reshape(mean_image, [-1, 1, 1, 1])
 
 
@@ -290,7 +289,7 @@ if '__main__' == __name__:
             'probabilities': probabilities,
             'predictions': tf.argmax(probabilities, axis=3)}
 
-        for i, (k, v) in enumerate(utils.STRUCTURE_CLASS):
+        for i, (k, v) in enumerate(segmentor_model.classes):
             cls_prob = tf.slice(probabilities, [0, 0, 0, i + 1], [-1, -1, -1, 1])
             cls_pred = tf.to_float(tf.equal(segmentation_tensors['predictions'], i + 1))
             target = tf.to_float(tf.equal(masks, i + 1))
@@ -322,7 +321,7 @@ if '__main__' == __name__:
                       if v.op.name in var_to_shape_map]
             print("Vars to restore:", [v.op.name for v in vars_to_restore])
 
-        saver = tf.train.Saver(tf.all_variables())
+        saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
 
         global_step_tensor = tf.train.get_global_step()
 
@@ -339,10 +338,10 @@ if '__main__' == __name__:
         threads = tf.train.start_queue_runners(sess=session, coord=coord)
 
         global_example_counter = 0
-        global_metrics = init_metrics()
+        global_metrics = init_metrics(segmentor_model.classes)
 
         example_counter = 0
-        metrics = init_metrics()
+        metrics = init_metrics(segmentor_model.classes)
 
         if args.validate_output_dir:
             os.makedirs(args.validate_output_dir)
@@ -372,7 +371,7 @@ if '__main__' == __name__:
 
                 current_metrics = {'losses': errors}
                 current_metrics['accuracy'] = {
-                    'segmentation': compute_jacard(pred_data['predictions'], gt)}
+                    'segmentation': compute_jacard(pred_data['predictions'], gt, segmentor_model.classes)}
 
                 metrics =  update_segmentation_metrics(current_metrics, metrics)
                 global_metrics = update_segmentation_metrics(current_metrics, global_metrics)
@@ -383,7 +382,7 @@ if '__main__' == __name__:
                 if(i % 20 == 0):
                     print("Step:", i, ",", "Metrics:")
                     pprint.pprint(normalize_metrics(metrics, example_counter))
-                    metrics = init_metrics()
+                    metrics = init_metrics(segmentor_model.classes)
                     example_counter = 0
                     summary_writer.add_summary(summary)
 
