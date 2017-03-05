@@ -104,6 +104,11 @@ class RadiomicsData(object):
 
         example['classes'] = tf.reshape(example['classes'], [2])
 
+        mean_image = tf.reduce_mean(example['image'], axis=[0,1,2])
+        example['image'] = example['image'] - tf.reshape(mean_image, [1, 1, 1])
+        print(example['image'])
+
+
         return example
 
 
@@ -175,6 +180,7 @@ class LungData(object):
         example['classes'] = tf.reshape(example['classes'], [2])
 
         return example
+
 
 
 data_providers = {'lung': LungData,
@@ -258,9 +264,6 @@ if '__main__' == __name__:
                              tf.expand_dims(slice_image, axis=-1))
 
         tf.summary.image("masks", masks)
-
-        mean_image = tf.reduce_mean(images, axis=[1,2,3])
-        images = images - tf.reshape(mean_image, [-1, 1, 1, 1])
 
 
         # segmentation model
@@ -365,9 +368,8 @@ if '__main__' == __name__:
 
                     for p in predictions_objects:
                         with open(os.path.join(args.validate_output_dir, p.scan_id + '.' + p.slice_id), 'wb') as f:
-                            probs_to_store = p.probabilities[:, :, 7].astype(np.float)
-                            pickle.dump((p.predictions.astype(np.uint8),
-                                         probs_to_store), f)
+                            probs_to_store = p.probabilities[:, :, 0].astype(np.float)
+                            pickle.dump(p.predictions.astype(np.uint8), f)
 
                 current_metrics = {'losses': errors}
                 current_metrics['accuracy'] = {

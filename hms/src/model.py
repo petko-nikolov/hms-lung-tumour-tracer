@@ -345,7 +345,9 @@ class VGGModel(SegmentorModelRadiomics):
         with slim.arg_scope(vgg.vgg_arg_scope()):
             h, end_points = vgg.vgg_19(input_tensor, is_training=is_training)
 
-        h = tf.pad(end_points['vgg_19/conv4'], [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
+        print(list(end_points.keys()))
+
+        h = tf.pad(end_points['vgg_19/pool4'], [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
         print(h)
 
         h = L.convolution2d_transpose(h, 128, [5, 5], [2, 2], activation_fn=None)
