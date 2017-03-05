@@ -324,7 +324,7 @@ if '__main__' == __name__:
                       if v.op.name in var_to_shape_map]
             print("Vars to restore:", [v.op.name for v in vars_to_restore])
 
-        saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=10)
+        saver = tf.train.Saver(tf.all_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=30)
 
         global_step_tensor = tf.train.get_global_step()
 
@@ -388,7 +388,7 @@ if '__main__' == __name__:
                     example_counter = 0
                     summary_writer.add_summary(summary)
 
-                if (i % 2000 and not validate_mode) == 0:
+                if (i % 1000 and not validate_mode) == 0:
                     saver.save(session, os.path.join(args.model_dir, 'model'), i)
             except tf.errors.OutOfRangeError:
                 break
