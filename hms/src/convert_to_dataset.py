@@ -36,7 +36,7 @@ if __name__ == '__main__':
                 with open(os.path.join(scan_path, 'structures.dat'), 'r') as f:
                     structures = [s.strip() for s in f.read().split('|')]
                     for i, st in enumerate(structures):
-                        matching = [mst for mst in STRUCTURE_CLASS if mst in st.lower()]
+                        matching = [mst for (mst, _) in STRUCTURE_CLASS if mst in st.lower()]
                         if matching:
                             structure_to_index[matching[0]].append(i)
 

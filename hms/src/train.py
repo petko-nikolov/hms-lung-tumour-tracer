@@ -388,7 +388,7 @@ if '__main__' == __name__:
                     example_counter = 0
                     summary_writer.add_summary(summary)
 
-                if (i % 1000 and not validate_mode) == 0:
+                if i >0 and i % 1000 == 0 and not validate_mode:
                     saver.save(session, os.path.join(args.model_dir, 'model'), i)
             except tf.errors.OutOfRangeError:
                 break
