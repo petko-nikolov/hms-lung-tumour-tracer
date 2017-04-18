@@ -5,6 +5,9 @@ import re
 from collections import defaultdict
 import json
 from utils import mm_to_pixels, STRUCTURE_CLASS
+import csv
+
+SEED_OFFSET = 20
 
 
 def parse_tags(tags):
@@ -25,8 +28,17 @@ if __name__ == '__main__':
     parser.add_argument(
         '--output_file', type=str, required=True,
         help='output_file')
+    parser.add_argument(
+        '--seed_file', type=str, required=True,
+        help='Seed file.')
     args = parser.parse_args()
 
+    seeds = defaultdict(lambda: defaultdict(list))
+
+    # read seed file
+    with open(args.seed_file, 'r') as rf:
+        for row in csv.reader(rf, delimiter=','):
+            seeds[row[0]][row[1]].append((float(row[2]), float(row[3])))
 
     with open(args.output_file, 'w') as wf:
         for scan_path in glob.glob(args.input_dir + '/*'):
@@ -53,8 +65,26 @@ if __name__ == '__main__':
                         slice_data[key] = value
                     tags = parse_tags(slice_data)
 
+                slice_seeds = []
+                for seed_slice in seeds.get(scan, {}).keys():
+                    if (int(seed_slice) - SEED_OFFSET <= int(slice_id) <= int(seed_slice) +
+                            SEED_OFFSET):
+                        for point in seeds[scan][seed_slice]:
+                            x, y = mm_to_pixels(point[0],
+                                                point[1],
+                                                tags['x0'],
+                                                tags['y0'],
+                                                tags['dx'],
+                                                tags['dy'])
+                            slice_seeds.append((round(x), round(y)))
+
+                if not slice_seeds:
+                    continue
+
                 result = defaultdict(list)
                 for structure, indexes in structure_to_index.items():
+                    if structure != 'radiomics_gtv':
+                        continue
                     for index in indexes:
                         polygon_path = os.path.join(
                             scan_path, 'contours',
@@ -76,5 +106,5 @@ if __name__ == '__main__':
                                         pixel_coordinates.extend([round(x), round(y)])
                                     result[structure].append(pixel_coordinates)
                 final_result = {'scan_id': scan, 'slice_id': slice_id,
-                                'structures': result, 'tags': tags}
+                                'structures': result, 'tags': tags, 'seeds': slice_seeds}
                 wf.write("{}\n".format(json.dumps(final_result)))

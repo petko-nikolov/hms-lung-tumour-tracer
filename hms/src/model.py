@@ -3,8 +3,8 @@ import tensorflow.contrib.layers as L
 from abc import ABCMeta, abstractmethod
 import utils
 import tensorflow.contrib.slim as slim
-from tensorflow.contrib.slim.nets import resnet_v1
 from tensorflow.contrib.slim.nets import vgg
+import numpy as np
 
 
 class Model(metaclass=ABCMeta):
@@ -33,7 +33,7 @@ class SegmentorModelLung(Model, metaclass=ABCMeta):
         weights = self._get_weights(targets)
         nll = tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=logits, labels=tf.to_int32(targets))
-        nll =  nll * weights
+        nll = nll * weights
         return tf.reduce_mean(nll)
 
 
@@ -53,7 +53,7 @@ class SegmentorModelRadiomics(Model, metaclass=ABCMeta):
         weights = self._get_weights(targets)
         nll = tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=logits, labels=tf.to_int32(targets))
-        nll =  nll * weights
+        nll = nll * weights
         return tf.reduce_mean(nll)
 
 
@@ -290,43 +290,7 @@ class ConvolutionalSegmentationModel3D(SegmentorModelRadiomics):
         h = L.convolution2d_transpose(h, 32, [5, 5], [2, 2], activation_fn=tf.nn.relu)
         h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
 
-
         h = L.convolution2d(h, len(self.classes) + 1, [1, 1], [1, 1], activation_fn=None)
-
-        return h
-
-
-class VGGModel(SegmentorModelRadiomics):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, input_tensor, is_training):
-        dropout_value = 0.5
-
-        print("Is training:", is_training)
-        input_tensor = tf.image.resize_images(input_tensor, [224, 224])
-        with slim.arg_scope(vgg.vgg_arg_scope()):
-            net, endpoint = vgg.vgg_19(input_tensor, is_training=is_training)
-        h = tf.pad(h, [[0, 0], [1, 1], [1, 1], [0, 0]], "CONSTANT")
-
-        h = L.convolution2d_transpose(h, 128, [5, 5], [2, 2], activation_fn=None)
-        h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
-
-        h = L.convolution2d_transpose(h, 64, [5, 5], [2, 2], activation_fn=None)
-        h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
-
-        h = L.convolution2d_transpose(h, 32, [5, 5], [2, 2], activation_fn=None)
-        h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
-
-        h = L.convolution2d_transpose(h, 32, [5, 5], [2, 2], activation_fn=None)
-        h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
-
-        h = L.convolution2d(h, len(self.classes) + 1, [1, 1], [1, 1], activation_fn=None)
-        print(h)
 
         return h
 
@@ -371,31 +335,59 @@ class VGGModel(SegmentorModelRadiomics):
         return h
 
 
-
-class ResnetV2Segmentation(SegmentorModelRadiomics):
+class VGG16Model(SegmentorModelRadiomics):
     def __init__(self):
         super().__init__()
 
     def forward(self, input_tensor, is_training):
-        # inputs has shape [batch, 513, 513, 3]
-        input_tensor = tf.image.resize_images(input_tensor, [512, 512])
-        with slim.arg_scope(resnet_v1.resnet_arg_scope(is_training)):
-           net, end_points = resnet_v1.resnet_v1_101(input_tensor,
-                                           None,
-                                           global_pool=False,
-                                           output_stride=16)
-           print(net.get_shape())
+        dropout_value = 0.5
 
-        h = L.convolution2d_transpose(net, 64, [5, 5], [4, 4], activation_fn=None)
+        # input_tensor = tf.image.resize_images(input_tensor, [224, 224])
+        batch_size = tf.shape(input_tensor)[0]
+
+        print("Is training:", is_training)
+
+        with slim.arg_scope(vgg.vgg_arg_scope()):
+            h, end_points = vgg.vgg_16(input_tensor, is_training=is_training)
+
+        print(end_points)
+        print(list(end_points.keys()))
+
+        h = end_points['vgg_16/pool4']
+
+        h = L.convolution2d_transpose(h, 256, [5, 5], [2, 2], activation_fn=None)
         h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=0.5, is_training=is_training)
+        h = tf.concat([h, end_points['vgg_16/pool3']], axis=3)
+        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
 
-        h = L.convolution2d_transpose(h, 32, [5, 5], [2, 2], activation_fn=None)
+        np_seed_mask = np.zeros((1, 56, 56, 1))
+        np_seed_mask[:, 28:29, 28:29, :] = 1.0
+        seed_mask = tf.constant(np_seed_mask, dtype=tf.float32)
+        seed_mask = tf.tile(seed_mask, [batch_size, 1, 1, 1])
+
+        h = L.convolution2d_transpose(h, 128, [5, 5], [2, 2], activation_fn=None)
         h = tf.nn.relu(h)
-        h = L.dropout(h, keep_prob=0.5, is_training=is_training)
+        h = tf.concat([h, end_points['vgg_16/pool2'], seed_mask], axis=3)
+        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
 
-        print(h)
+        h = L.convolution2d_transpose(h, 64, [5, 5], [2, 2], activation_fn=None)
+        h = tf.nn.relu(h)
+        h = tf.concat([h, end_points['vgg_16/pool1']], axis=3)
+        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
+
+        h = L.convolution2d_transpose(h, 64, [5, 5], [2, 2], activation_fn=None)
+        h = tf.concat([h, input_tensor], axis=3)
+        h = tf.nn.relu(h)
+        h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
+
+        # h = L.convolution2d_transpose(h, 64, [5, 5], [2, 2], activation_fn=None)
+        # h = tf.nn.relu(h)
+        # h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
+
+        # h = L.convolution2d_transpose(h, 64, [5, 5], [2, 2], activation_fn=None)
+        # h = tf.nn.relu(h)
+        # h = L.dropout(h, keep_prob=dropout_value, is_training=is_training)
 
         h = L.convolution2d(h, len(self.classes) + 1, [1, 1], [1, 1], activation_fn=None)
-        print(h)
+
         return h

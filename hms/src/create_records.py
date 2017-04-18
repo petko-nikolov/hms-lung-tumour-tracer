@@ -49,7 +49,8 @@ def create_example(line):
                        [int(any(x in data['structures'] for x in v))
                         for k, v in utils.LUNG_CLASSES], dtype=np.int32)
 
-    print("Writing: ", data['structures'].keys(), "Classes:", classes, "Image max:", np.max(input_image),
+    print("Writing: ", data['structures'].keys(), "Classes:", classes,
+          "Image max:", np.max(input_image),
           "Mask max: ", np.max(mask))
 
     example = tf.train.Example(features=tf.train.Features(
@@ -87,7 +88,8 @@ def create_lung_example(line):
     classes = np.array([0] +
                        ['radiomics_gtv' in data['structures']], dtype=np.int32)
 
-    print("Writing: ", data['structures'].keys(), "Classes:", classes, "Image max:", np.max(input_image),
+    print("Writing: ", data['structures'].keys(), "Classes:", classes,
+          "Image max:", np.max(input_image),
           "Mask max: ", np.max(mask))
 
     example = tf.train.Example(features=tf.train.Features(
@@ -101,6 +103,71 @@ def create_lung_example(line):
     return example
 
 
+def create_seed_example(line):
+    data = utils.parse_line(line.strip())
+
+    input_image = create_input_image(
+        args.input_dir, data['scan_id'], data['slice_id'], (512, 512), 1)
+
+    # normalize the image
+    input_image = input_image / 0.0625
+
+    if args.structure and args.structure not in data['structures']:
+        return None
+
+    radiomics = {k: v for k, v in data['structures'].items() if k == 'radiomics_gtv'}
+
+    examples = []
+
+    for seed in data['seeds']:
+        mask = utils.create_mask((512, 512), radiomics)
+        height, width = 224, 224
+        r0 = max(0, seed[1] - height // 2)
+        c0 = max(0, seed[0] - width // 2)
+        r1 = seed[1] + height // 2
+        c1 = seed[0] + width // 2
+
+        mask = mask[r0:r1, c0:c1]
+        image = input_image[r0:r1, c0:c1, :]
+
+        pad_h = (height - image.shape[0]) / 2
+        pad_w = (width - image.shape[1]) / 2
+
+        print("Point", seed, "Image", image.shape, "Mask", mask.shape, "Pad", pad_h, pad_w)
+
+        if pad_h or pad_w:
+            mask = np.pad(mask, ((int(np.ceil(pad_h)), int(np.floor(pad_h))),
+                                 (int(np.ceil(pad_w)), int(np.floor(pad_w)))),
+                          mode='constant')
+
+            image = np.pad(image, ((int(np.ceil(pad_h)), int(np.floor(pad_h))),
+                                   (int(np.ceil(pad_w)), int(np.floor(pad_w))),
+                                   (0, 0)),
+                           mode='constant')
+
+        assert(image.shape[0] == height and image.shape[1] == width)
+        assert(mask.shape[0] == height and mask.shape[1] == width)
+
+        classes = np.array([0] +
+                           ['radiomics_gtv' in data['structures']], dtype=np.int32)
+
+        print("Writing: ", data['structures'].keys(), "Classes:", classes,
+              "Image max:", np.max(image),
+              "Mask max: ", np.max(mask))
+
+        example = tf.train.Example(features=tf.train.Features(
+            feature={'height': _int64_feature(height),
+                     'width': _int64_feature(width),
+                     'image': _bytes_feature(image.tostring()),
+                     'mask': _bytes_feature(mask.tostring()),
+                     'scan_id': _bytes_feature(data['scan_id'].encode()),
+                     'slice_id': _bytes_feature(data['slice_id'].encode()),
+                     'classes': _bytes_feature(classes.tostring())}))
+
+        examples.append(example)
+    return examples
+
+
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
@@ -111,11 +178,13 @@ def process_lines(lines):
     writer = tf.python_io.TFRecordWriter(
         os.path.join(args.output_directory, 'data-{}'.format(uuid.uuid4())), tf_options)
     for line in lines:
-        if not args.lungs:
-            example = create_example(line)
-        else:
-            example = create_lung_example(line)
-        if example:
+        if args.type == 'normal':
+            examples = create_example(line)
+        elif args.type == 'lungs':
+            examples = create_lung_example(line)
+        elif args.type == 'seeds':
+            examples = create_seed_example(line)
+        for example in examples:
             writer.write(example.SerializeToString())
     writer.close()
 
@@ -134,8 +203,8 @@ if __name__ == '__main__':
         '--structure', type=str, required=False, default=None,
         help='Structure type.')
     parser.add_argument(
-        '--lungs', action='store_true', required=False,
-        help='Generate records for lungs.')
+        '--type', choices=['lungs', 'seeds', 'normal'], type=str, required=True,
+        help='Generate records from type.')
     args = parser.parse_args()
 
     os.makedirs(args.output_directory)
