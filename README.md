@@ -11,12 +11,18 @@ The two networks architecture is a UNet model with a VGG16 backbone pretrained o
 ./compile.sh
 ```
 
+Install CUDA 8.0 and CuDNN 5.1 to enable GPU training.
+
 ### Training
 ```
 ./train.sh $DATA_DIR $MODEL_OUTPUT_DIR
 ```
 
+Check out ```train.py``` for detailed parameter control.
+
 ### Testing 
+
+Track the validation `mIOU` in Tensorboard to choose the best performing model to use for testing.
 
 ```
 ./test.sh $TEST_DATA_DIR $MODEL_OUTPUT_DIR/model.ckpt-N
